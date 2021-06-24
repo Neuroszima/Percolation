@@ -1,7 +1,45 @@
+import concurrent.futures
 from random import random
 from copy import deepcopy
+from concurrent.futures import ProcessPoolExecutor
 
 from pathfinding import find_path_2D, find_path_3D
+from misc import time_it
+
+
+def worker_2d(vals):
+    """
+    this function encapsulates generating lattices for 2d percolation problem and invoking pathfinding
+    this is used for multiprocessing future obects in executor
+    this can't be put in as local function since functions have to be pre-pickled into it
+
+    :param vals: tuple wrapper for (propability, samples, lattice_size,)
+    :return: number of times percolation did occur in lattice
+    """
+    v = vals[0]
+    su_rate = 0
+    for i in range(v[1]):
+        lat = lattice_gen_2D(v[2], v[2], v[0])
+        if find_path_2D([[True] + line + [True] for line in lat]):
+            su_rate += 1
+    return [v[2], v[0], su_rate]
+
+
+def worker_3d(vals):
+    """
+    same as 2d version of this worker
+
+    :param vals: tuple wrapper for (propability, samples, lattice_size,)
+    :return: number of times percolation did occur in lattice
+    """
+    v = vals[0]
+    su_rate = 0
+    for i in range(v[1]):
+        lat = lattice_gen_3D(v[2], v[2], v[2], v[0])
+        if find_path_3D([[[True] + line + [True] for line in surface]
+                         for surface in lat]):
+            su_rate += 1
+    return [v[2], v[0], su_rate]
 
 
 def lattice_gen_2D(x=10, y=10, p=0.1):
@@ -50,22 +88,22 @@ class Percolation:
         pass
 
 
-class Percolation_2D(Percolation):
+class Percolation2D(Percolation):
     def __init__(self, starting_size=4, end_size=13,
                  start_propablity=0.2, end_propability=0.65, step=0.03,
                  samples=100):
-        super(Percolation_2D, self).__init__(starting_size=starting_size,
-                                             end_size=end_size,
-                                             start_propablity=start_propablity,
-                                             end_propability=end_propability,
-                                             step=step, samples=samples)
+        super(Percolation2D, self).__init__(starting_size=starting_size,
+                                            end_size=end_size,
+                                            start_propablity=start_propablity,
+                                            end_propability=end_propability,
+                                            step=step, samples=samples)
         self.__data = []
 
     def start_sampling(self):
         sizes = list(range(self.s_s, self.e_s))
         for size in sizes:
             size_set = []
-            print("size " + str(size))
+            # print("size " + str(size))
             for pr in self.get_propablity_set():
                 success_rate = 0
                 for i in range(self._samples):
@@ -75,22 +113,33 @@ class Percolation_2D(Percolation):
                 size_set.append([size, pr, success_rate])
             self.__data.append(size_set)
 
+    def multiprocessed_sampling_2d(self):
+        sizes = list(range(self.s_s, self.e_s))
+        for size in sizes:
+            size_set = []
+            with ProcessPoolExecutor() as pex:
+                props_ = [(pr, self._samples, size) for pr in self.get_propablity_set()]
+                ppool = [pex.submit(worker_2d, (i,)) for i in props_]
+                for f in concurrent.futures.as_completed(ppool):
+                    size_set.append(f.result())
 
-class Percolation_3D(Percolation):
+            self.__data.append(size_set)
+
+
+class Percolation3D(Percolation):
     def __init__(self, starting_size=4, end_size=10,
                  start_propablity=0.2, end_propability=0.6, step=0.05,
                  samples=100):
-        super(Percolation_3D, self).__init__(starting_size=starting_size,
-                                             end_size=end_size,
-                                             start_propablity=start_propablity,
-                                             end_propability=end_propability,
-                                             step=step, samples=samples)
+        super(Percolation3D, self).__init__(starting_size=starting_size,
+                                            end_size=end_size,
+                                            start_propablity=start_propablity,
+                                            end_propability=end_propability,
+                                            step=step, samples=samples)
         self.__data = []
 
     def start_sampling(self):
         sizes = list(range(self.s_s, self.e_s))
         for size in sizes:
-            print("size" + str(size))
             size_set = []
             for pr in self.get_propablity_set():
                 success_rate = 0
@@ -104,9 +153,22 @@ class Percolation_3D(Percolation):
                 size_set.append([size, pr, success_rate])
             self.__data.append(size_set)
 
+    def multiprocessed_sampling_3d(self):
+        sizes = list(range(self.s_s, self.e_s))
+        for size in sizes:
+            size_set = []
+            with ProcessPoolExecutor() as pex:
+                props_ = [(pr, self._samples, size) for pr in self.get_propablity_set()]
+                ppool = [pex.submit(worker_3d, (i,)) for i in props_]
+                for f in concurrent.futures.as_completed(ppool):
+                    size_set.append(f.result())
+
+            self.__data.append(size_set)
 
 if __name__ == '__main__':
-    perc_2d = Percolation_2D()
-    perc_2d.start_sampling()
-    perc_3d = Percolation_3D()
-    perc_3d.start_sampling()
+    perc_2d = Percolation2D()
+    time_it(perc_2d.start_sampling)()
+    time_it(perc_2d.multiprocessed_sampling_2d)()
+    perc_3d = Percolation3D()
+    time_it(perc_3d.start_sampling)()
+    time_it(perc_3d.multiprocessed_sampling_3d)()

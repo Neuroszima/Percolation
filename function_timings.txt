@@ -1,0 +1,86 @@
+(timings done on Intel Core i7-6700HQ CPU @ 2.60GHz, Nvidia GTX 960M)
+
+'find_path' function at first had non-skippable route checks, loads and deepcopy appends
+'NR' was copy-paste version that had simple 'visited' checks, and the only thing that was loaded when backtracking
+    was locations it hasn't visited before, not a full array with route
+Result is 2-3x improvement over 2-dimensional grids (10x10), and even more significant in 3D (3-6x at 6x6x6 lattice)
+Additional 'pathing' variable check is within time measurement error, captured with @time_it decorator
+
+example of results at seed(200)
+
+from pathfinding.py:
+
+find_path_2D took 0.5109310150146484 miliseconds
+find_path_2D took 5.443811416625977 miliseconds
+find_path_2D_NR took 0.23317337036132812 miliseconds
+find_path_2D_NR took 1.4576911926269531 miliseconds
+find_path_3D took 6.271839141845703 miliseconds
+find_path_3D took 7.086038589477539 miliseconds
+find_path_3D_NR took 2.2840499877929688 miliseconds
+find_path_3D_NR took 1.2211799621582031 miliseconds
+
+after adding 'pathing' to standard version
+
+find_path_2D took 0.11968612670898438 miliseconds
+find_path_2D took 0.6611347198486328 miliseconds
+find_path_2D_NR took 0.10013580322265625 miliseconds
+find_path_2D_NR took 0.7383823394775391 miliseconds
+find_path_3D took 1.1050701141357422 miliseconds
+find_path_3D took 0.6117820739746094 miliseconds
+find_path_3D_NR took 1.7724037170410156 miliseconds
+find_path_3D_NR took 1.018524169921875 miliseconds
+
+lazy-flatten vs. 'itertools.chain.from_iterable(my_list)'(x3 - it doesn't fully flatten in one go)
+against 160 values in 4d array, shape [4, 5, 2, 4], read from inside to outside [[[[4vals]x5rows]x2'sheets']x4]
+
+lazy-listcomp flatten took 0.05054473876953125 miliseconds
+itertools flatten took 0.010728836059570312 miliseconds
+
+another test of different listcomp, the seq to generate goes as follows:
+[[0, 0], [0, 1], [0, 2], [0, 3], [0, 4], [0, 5], [0, 6], [0, 7], ...]
+
+1. [[0, _[1]] for _ in zip(list(range(len(flat))), list(range(len(flat))))]
+2. [[0, _[1]] for _ in enumerate(range(len(flat)))]
+
+zip took 0.029325485229492188 milliseconds
+enumerate took 0.023126602172851562 milliseconds
+zip took 0.02765655517578125 milliseconds
+enumerate took 0.022649765014648438 milliseconds
+zip took 0.03743171691894531 milliseconds
+enumerate took 0.022649765014648438 milliseconds
+zip took 0.05125999450683594 milliseconds
+enumerate took 0.03457069396972656 milliseconds
+
+distance map creation from flattened list; the hope is that, due to very nice structure of problem, it can be
+multithreaded/GPU accelerated for increased performance
+
+test against [8, 6, 6] 3d matrix, first without any multithreading
+
+create map used flattened array, coordinates of points that represented particular position in flattened array were
+obtained by dividing index by a certain multiplier with casting into int(), once for each dimension into _[0], with
+reminder saved to _[1] memory to be used in next iteration.
+Since distance is created by square root of sum of squared differences between end and start, sum of each squared difference
+is accumulated and root calculated in last step. This approach is universal and can be scaled into any number of
+dimensions without changing the core of algorithm.
+
+create_map took 0.6639957427978516 milliseconds
+create_map_traditional took 0.26679039001464844 milliseconds
+create_map took 0.9000301361083984 milliseconds
+create_map_traditional took 0.26535987854003906 milliseconds
+
+unfortunately, steps that include allocating shared memory and creating processes takes incredibly long:
+
+4x process list took 13.814449310302734 miliseconds
+listcomp list took 0.0324249267578125 miliseconds
+
+this scale however is too small and process is too simple to even bother starting doing it, real improvement can
+immidietaly be seen in bigger workloads )
+
+start_sampling took 1829.5557498931885 milliseconds
+multiprocessed_sampling_2d took 615.7114505767822 milliseconds
+start_sampling took 5355.13973236084 milliseconds
+multiprocessed_sampling_3d took 1589.782953262329 milliseconds
+
+swapping name form 'Process' to 'Thread' doesn't come with any benefits, as expected
+
+
